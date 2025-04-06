@@ -415,3 +415,87 @@ function StudentDashboard() {
 }
 
 export default StudentDashboard;
+// 📁 backend/routes/assignments.js
+router.post("/assign", authenticate, async (req, res) => {
+  if (req.user.role !== "ogretmen") return res.status(403).json({ error: "Yetkisiz işlem" });
+
+  const { title, description, dueDate, classId } = req.body;
+  try {
+    const newAssignment = new Assignment({
+      title,
+      description,
+      dueDate,
+      teacher: req.user._id,
+      class: classId,
+    });
+    await newAssignment.save();
+
+    const foundClass = await Class.findById(classId);
+    foundClass.assignments.push(newAssignment._id);
+    await foundClass.save();
+
+    res.status(200).json(newAssignment);
+  } catch (error) {
+    res.status(500).json({ error: "Ödev oluşturulurken bir hata oluştu" });
+  }
+});
+// 📁 backend/sockets/index.js
+const socketIo = require("socket.io");
+
+let io;
+const users = [];
+
+const socketHandler = (server) => {
+  io = socketIo(server);
+  
+  io.on("connection", (socket) => {
+    console.log("Yeni kullanıcı bağlandı", socket.id);
+
+    socket.on("join", (userId) => {
+      users.push({ userId, socketId: socket.id });
+      console.log(users);
+    });
+
+    socket.on("message", (data) => {
+      const { receiverId, message } = data;
+      const receiver = users.find((user) => user.userId === receiverId);
+      
+      if (receiver) {
+        io.to(receiver.socketId).emit("message", message);
+      }
+    });
+
+    socket.on("disconnect", () => {
+      const index = users.findIndex((user) => user.socketId === socket.id);
+      if (index !== -1) users.splice(index, 1);
+    });
+  });
+};
+
+module.exports = { socketHandler };
+CLOUDINARY_CLOUD_NAME=cloud_name
+CLOUDINARY_API_KEY=api_key
+CLOUDINARY_API_SECRET=api_secret
+// 📁 backend/routes/media.js
+const cloudinary = require("cloudinary").v2;
+const express = require("express");
+const { authenticate } = require("../middleware/auth");
+
+const router = express.Router();
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+router.post("/upload", authenticate, async (req, res) => {
+  try {
+    const result = await cloudinary.uploader.upload(req.body.image, {
+      folder: "edu_media",
+    });
+    res.status(200).json({ url: result.secure_url });
+  } catch (error) {
+    res.status(500).json({ error: "Medya yüklenirken bir hata oluştu" });
+  }
+});
