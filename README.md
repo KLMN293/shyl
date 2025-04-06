@@ -271,3 +271,147 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 MONGO_URI=mongodb+srv://kullanici:parola@cluster.mongodb.net/edunet
 PORT=5000
 JWT_SECRET=supersecretkey123
+POST http://localhost:5000/api/register
+{
+  "name": "Ahmet Öğretmen",
+  "email": "ahmet@okul.com",
+  "password": "123456",
+  "role": "ogretmen"
+}
+POST http://localhost:5000/api/login
+{
+  "email": "ahmet@okul.com",
+  "password": "123456"
+}
+{
+  "token": "JWT_TOKEN",
+  "user": {
+    "id": "...",
+    "name": "Ahmet Öğretmen",
+    "role": "ogretmen"
+  }
+}
+GET /api/profile
+Authorization: Bearer JWT_TOKEN
+// 📁 backend/models/Class.js
+const mongoose = require("mongoose");
+
+const ClassSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  teacher: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  students: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  assignments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Assignment" }],
+});
+
+const Class = mongoose.model("Class", ClassSchema);
+
+module.exports = Class;
+// 📁 backend/models/Assignment.js
+const mongoose = require("mongoose");
+
+const AssignmentSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  dueDate: { type: Date, required: true },
+  teacher: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  class: { type: mongoose.Schema.Types.ObjectId, ref: "Class", required: true },
+});
+
+const Assignment = mongoose.model("Assignment", AssignmentSchema);
+
+module.exports = Assignment;
+// 📁 backend/routes/assignments.js
+const express = require("express");
+const Assignment = require("../models/Assignment");
+const Class = require("../models/Class");
+const { authenticate } = require("../middleware/auth");
+
+const router = express.Router();
+
+// Ödev ekle (öğretmen için)
+router.post("/assign", authenticate, async (req, res) => {
+  if (req.user.role !== "ogretmen") return res.status(403).json({ error: "Yetkisiz işlem" });
+
+  const { title, description, dueDate, classId } = req.body;
+  try {
+    const newAssignment = await Assignment.create({ title, description, dueDate, teacher: req.user.id, class: classId });
+    await Class.findByIdAndUpdate(classId, { $push: { assignments: newAssignment._id } });
+    res.json({ message: "Ödev başarıyla atandı", assignment: newAssignment });
+  } catch (err) {
+    res.status(500).json({ error: "Bir hata oluştu", detail: err });
+  }
+});
+
+// Ödevleri listele (öğrenciler için)
+router.get("/class/:classId", authenticate, async (req, res) => {
+  try {
+    const assignments = await Assignment.find({ class: req.params.classId });
+    res.json(assignments);
+  } catch (err) {
+    res.status(500).json({ error: "Ödevler getirilemedi", detail: err });
+  }
+});
+// 📁 frontend/src/pages/TeacherDashboard.jsx
+import React, { useState } from "react";
+
+function TeacherDashboard() {
+  const [assignmentTitle, setAssignmentTitle] = useState("");
+  const [assignmentDescription, setAssignmentDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+
+  const handleAssign = async () => {
+    // API isteği atılacak
+  };
+
+  return (
+    <div className="dashboard">
+      <h2>Ödev Atama</h2>
+      <input
+        type="text"
+        placeholder="Ödev Başlığı"
+        value={assignmentTitle}
+        onChange={(e) => setAssignmentTitle(e.target.value)}
+      />
+      <textarea
+        placeholder="Açıklama"
+        value={assignmentDescription}
+        onChange={(e) => setAssignmentDescription(e.target.value)}
+      />
+      <input
+        type="datetime-local"
+        value={dueDate}
+        onChange={(e) => setDueDate(e.target.value)}
+      />
+      <button onClick={handleAssign}>Ödev Ata</button>
+    </div>
+  );
+}
+
+export default TeacherDashboard;
+// 📁 frontend/src/pages/StudentDashboard.jsx
+import React, { useState, useEffect } from "react";
+
+function StudentDashboard() {
+  const [assignments, setAssignments] = useState([]);
+
+  useEffect(() => {
+    // API'den ödevleri çekme
+  }, []);
+
+  return (
+    <div className="dashboard">
+      <h2>Ödevlerim</h2>
+      <ul>
+        {assignments.map((assignment) => (
+          <li key={assignment._id}>
+            <h3>{assignment.title}</h3>
+            <p>{assignment.description}</p>
+            <p>Son teslim tarihi: {new Date(assignment.dueDate).toLocaleString()}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export default StudentDashboard;
